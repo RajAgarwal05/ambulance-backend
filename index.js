@@ -886,6 +886,47 @@ io.on("connection", (socket) => {
       socket.emit("trip_complete_ack", { success: false });
     }
   });
+  // 7) USER cancels SOS
+  socket.on("cancel_sos", async ({ userSocketId, driverId }) => {
+    try {
+      console.log("❌ User canceled SOS for driver:", driverId);
+
+      // 1) Driver ko free karo
+      await Driver.findByIdAndUpdate(driverId, {
+        isAvailable: true,
+        assignedUser: null,
+      });
+
+      // 2) Memory me driver ko free karo
+      for (const sid in drivers) {
+        if (String(drivers[sid].driverId) === String(driverId)) {
+          drivers[sid].isAvailable = true;
+          drivers[sid].assignedUserSocketId = null;
+
+          // 3) Driver app ko inform
+          io.to(sid).emit("sos_canceled_by_user", {
+            message: "User canceled the SOS request",
+          });
+
+          break;
+        }
+      }
+
+      // 4) History me update
+      await SosHistory.findOneAndUpdate(
+        { driverId, status: "assigned" },
+        {
+          status: "canceled",
+          canceledAt: new Date(),
+        }
+      );
+
+      console.log("🛑 SOS canceled successfully");
+    } catch (err) {
+      console.log("❌ cancel_sos error:", err.message);
+    }
+  });
+
 
   socket.on("disconnect", async () => {
     delete userTrackingSockets[socket.id];
